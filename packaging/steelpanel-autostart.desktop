@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SteelPanel (tray)
+Comment=Apply the active SteelSeries profile at login
+Exec=steelpanel --hidden
+Icon=input-mouse
+Terminal=false
+X-GNOME-Autostart-enabled=true

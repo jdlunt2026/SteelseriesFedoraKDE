@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SteelPanel
+Comment=Configure SteelSeries mice and keyboards
+Exec=steelpanel
+Icon=input-mouse
+Categories=Settings;HardwareSettings;
+Terminal=false
