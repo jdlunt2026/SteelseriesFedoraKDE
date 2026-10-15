@@ -6,9 +6,9 @@ the system tray.
 
 ![Mouse settings](docs/mouse.png)
 
-| Lighting | Button mapping | Keyboard |
+| Lighting | Power | Keyboard |
 |---|---|---|
-| ![](docs/mouse-lighting.png) | ![](docs/mouse-buttons.png) | ![](docs/keyboard.png) |
+| ![](docs/mouse-lighting.png) | ![](docs/mouse-power.png) | ![](docs/keyboard.png) |
 
 ## How it works
 
@@ -23,6 +23,21 @@ SteelPanel builds on two open-source projects that reverse-engineered them:
 The GUI is generated from each device's capability description, so any mouse
 that rivalcfg supports gets the right controls automatically.
 
+## Tested target: Aerox 9 Wireless + Apex Pro Gen 3 on Fedora KDE
+
+**Aerox 9 Wireless:** works over the USB cable and the 2.4 GHz dongle
+(not Bluetooth). Both connections share one set of profile settings, and
+when both are present the cable is used.
+
+| Available | Not available on Linux |
+|---|---|
+| 5 DPI presets (100–18000), polling rate, 3 RGB zones, reactive (click) color, rainbow effect, startup lighting, sleep and dim timers, battery level, save to onboard memory | Button remapping (rivalcfg doesn't support it for this mouse), Bluetooth mode |
+
+**Apex Pro Gen 3:** lighting only, through OpenRGB, which recognises this
+keyboard from **version 1.0** (September 2026). Older OpenRGB versions won't
+list it. Check with `openrgb --version`. Actuation points, rapid trigger and
+the OLED screen are only configurable in SteelSeries GG.
+
 ## Install
 
 ```bash
@@ -31,9 +46,8 @@ python3 -m venv ~/.local/share/steelpanel-venv
 ln -s ~/.local/share/steelpanel-venv/bin/steelpanel ~/.local/bin/steelpanel
 ```
 
-Arch/Fedora/Debian users may need the Qt runtime libraries
-(`libegl1 libxkbcommon0 libfontconfig1`); they're already present on any
-normal desktop install.
+On Fedora KDE everything needed is already installed (Python 3 and the Qt
+libraries). The app follows your Plasma theme and shows up in the system tray.
 
 ### Mice: allow access without root
 
@@ -45,8 +59,11 @@ Then unplug and replug the mouse.
 
 ### Keyboards: run OpenRGB's server
 
-1. Install OpenRGB from your distro or [openrgb.org](https://openrgb.org), including its
-   udev rules (`60-openrgb.rules`, shipped with the distro packages).
+1. Install OpenRGB **1.0 or newer**: `sudo dnf install openrgb`, or a
+   newer build from [openrgb.org](https://openrgb.org) if the Fedora package is
+   older than 1.0. Builds that don't come from the Fedora package don't install
+   udev rules, so also install `60-openrgb.rules` from openrgb.org into
+   `/etc/udev/rules.d/`, then run `sudo udevadm control --reload-rules && sudo udevadm trigger`.
 2. Start the SDK server: `openrgb --server` (or enable "Start server" in
    OpenRGB's settings and have it autostart).
 

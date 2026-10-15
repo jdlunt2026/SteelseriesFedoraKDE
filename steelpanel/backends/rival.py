@@ -33,11 +33,29 @@ BUTTON_ACTIONS = [
 
 _LIGHTING_HINTS = ("color", "light", "led", "rainbow", "reactive", "gradient")
 _PERFORMANCE_HINTS = ("sensitivity", "dpi", "polling", "angle", "lift", "acceleration")
+_POWER_HINTS = ("sleep", "dim", "timer", "battery")
+# rivalcfg puts units in descriptions, e.g. "... (minutes, 0 = disable)".
+_UNITS = {"minutes": "min", "seconds": "s", "ms": "ms", "Hz": "Hz", "%": "%"}
+
+# Wireless mice have one rivalcfg profile per connection, e.g.
+# "SteelSeries Aerox 9 Wireless (wired mode)" and "... (2.4 GHz wireless mode)".
+_MODE_SUFFIX = re.compile(r"\s*\(([^()]*\bmode)\)\s*$")
+
+
+def split_connection(model_name: str) -> tuple[str, str | None]:
+    """Split a rivalcfg model name into (device name, connection mode)."""
+    m = _MODE_SUFFIX.search(model_name)
+    if not m:
+        return model_name, None
+    mode = m.group(1).replace("\xa0", " ")
+    return model_name[: m.start()], mode[: -len(" mode")].strip()
 
 
 def _group_for(key: str) -> str:
     if key == "buttons_mapping":
         return model.MAPPING
+    if any(h in key for h in _POWER_HINTS):
+        return model.POWER
     if any(h in key for h in _LIGHTING_HINTS):
         return model.LIGHTING
     if any(h in key for h in _PERFORMANCE_HINTS):
@@ -110,7 +128,13 @@ def settings_from_profile(profile: dict) -> list[Setting]:
             s = Setting(kind=model.CHOICE, choices=list(info["choices"].keys()), **common)
         elif vt in ("range", "range_choice"):
             lo, hi, step = info["input_range"]
-            s = Setting(kind=model.RANGE, minimum=lo, maximum=hi, step=step, **common)
+            desc = common["description"]
+            unit = next((u for word, u in _UNITS.items() if f"({word}" in desc), "")
+            s = Setting(
+                kind=model.RANGE, minimum=lo, maximum=hi, step=step, unit=unit,
+                minimum_label="Never" if lo == 0 and "0 = disable" in desc else "",
+                **common,
+            )
         elif vt in ("multidpi_range", "multidpi_range_choice", "multidpi_range_choice_xy"):
             lo, hi, step = info["input_range"]
             default = info.get("default")
@@ -141,8 +165,10 @@ class RivalMouse(Device):
 
     def __init__(self, mouse):
         self._mouse = mouse
-        self.name = mouse.name
-        self.id = f"mouse:{mouse.vendor_id:04x}:{mouse.product_id:04x}"
+        self.name, self.connection = split_connection(mouse.name)
+        # Keyed by name, not USB id, so a wireless mouse keeps one set of
+        # profile values whether it is used over the cable or the dongle.
+        self.id = f"mouse:{self.name}"
         self.supports_onboard_save = "save_command" in mouse.mouse_profile
         self._settings = settings_from_profile(mouse.mouse_profile)
         self._by_key = {s.key: s for s in self._settings}
@@ -169,6 +195,8 @@ class RivalMouse(Device):
 
     def info(self) -> dict[str, str]:
         lines = {"Device": f"{self._mouse.vendor_id:04x}:{self._mouse.product_id:04x}"}
+        if self.connection:
+            lines["Connection"] = self.connection
         try:
             fw = self._mouse.firmware_version
             if fw and fw.strip("0.") != "":  # all-zero means unknown
@@ -199,12 +227,22 @@ class RivalBackend(Backend):
         if rivalcfg is None:
             result.problems.append("rivalcfg is not installed: mouse support disabled.")
             return result
-        seen = set()
+        plugged = {}
         for dev in rival_devices.list_plugged_devices():
-            ids = (dev["vendor_id"], dev["product_id"])
-            if ids in seen:
+            plugged.setdefault((dev["vendor_id"], dev["product_id"]), dev)
+        # With the cable plugged in, a wireless mouse shows up both through its
+        # cable and its dongle: keep the cable, which is the more reliable link.
+        def wired_first(ids):
+            _, conn = split_connection(rival_devices.get_profile(*ids)["name"])
+            return 0 if conn in (None, "wired") else 1
+
+        seen_names = set()
+        for ids in sorted(plugged, key=wired_first):
+            dev = plugged[ids]
+            name, _ = split_connection(rival_devices.get_profile(*ids)["name"])
+            if name in seen_names:
                 continue
-            seen.add(ids)
+            seen_names.add(name)
             try:
                 result.devices.append(RivalMouse(get_mouse(*ids)))
             except (IOError, OSError) as exc:

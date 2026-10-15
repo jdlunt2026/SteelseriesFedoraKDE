@@ -69,3 +69,9 @@ def test_rediscovery_reuses_client():
     b.discover()
     b.discover()
     assert client.updates == 1
+
+
+def test_hint_when_server_has_no_steelseries_keyboard():
+    b, _ = backend_with(FakeDevice("Corsair K70", vendor="Corsair"))
+    found = b.discover()
+    assert found.devices == [] and "OpenRGB 1.0" in found.problems[0]

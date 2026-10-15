@@ -8,7 +8,7 @@ from typing import Any
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QCheckBox, QColorDialog, QComboBox, QFormLayout, QHBoxLayout, QLabel,
+    QCheckBox, QColorDialog, QComboBox, QFormLayout, QGridLayout, QHBoxLayout, QLabel,
     QPushButton, QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -80,7 +80,11 @@ class RangeEditor(SettingEditor):
         steps = max(1, (spec.maximum - spec.minimum) // spec.step)
         self.slider = QSlider(Qt.Horizontal, minimum=0, maximum=steps)
         self.spin = QSpinBox(minimum=spec.minimum, maximum=spec.maximum, singleStep=spec.step)
-        self.spin.setMinimumWidth(80)
+        if spec.unit:
+            self.spin.setSuffix(f" {spec.unit}")
+        if spec.minimum_label:
+            self.spin.setSpecialValueText(spec.minimum_label)
+        self.spin.setMinimumWidth(90)
         self._timer = self._debounced()
         self.slider.valueChanged.connect(
             lambda i: self.spin.setValue(spec.minimum + i * spec.step))
@@ -157,28 +161,38 @@ class ColorEditor(SettingEditor):
 
 
 class DpiEditor(SettingEditor):
-    """Editable list of DPI presets (1..max_presets)."""
+    """Editable list of DPI presets (1..max_presets), laid out in a grid so
+    five presets still fit a narrow window."""
+
+    COLUMNS = 3
 
     def __init__(self, spec, parent=None):
         super().__init__(spec, parent)
-        self.row = QHBoxLayout(self)
-        self.row.setContentsMargins(0, 0, 0, 0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.grid = QGridLayout()
+        self.grid.setHorizontalSpacing(8)
+        outer.addLayout(self.grid)
         self.spins: list[QSpinBox] = []
         self._timer = self._debounced()
-        self.add_btn = QToolButton(text="+", toolTip="Add a DPI preset")
-        self.del_btn = QToolButton(text="−", toolTip="Remove the last DPI preset")
+        buttons = QHBoxLayout()
+        self.add_btn = QToolButton(text="+ Add preset", toolTip="Add a DPI preset")
+        self.del_btn = QToolButton(text="− Remove", toolTip="Remove the last DPI preset")
         self.add_btn.clicked.connect(lambda: self._add(self.spins[-1].value() if self.spins else 800, emit=True))
         self.del_btn.clicked.connect(self._remove)
-        self.row.addWidget(self.del_btn)
-        self.row.addWidget(self.add_btn)
-        self.row.addStretch()
+        buttons.addWidget(self.add_btn)
+        buttons.addWidget(self.del_btn)
+        buttons.addStretch()
+        outer.addLayout(buttons)
 
     def _add(self, dpi: int, emit=False):
         spin = QSpinBox(minimum=self.spec.minimum, maximum=self.spec.maximum,
                         singleStep=self.spec.step, suffix=" dpi")
+        spin.setMinimumWidth(100)
         spin.setValue(int(dpi))
         spin.valueChanged.connect(lambda *_: None if self._loading else self._timer.start())
-        self.row.insertWidget(len(self.spins), spin)
+        i = len(self.spins)
+        self.grid.addWidget(spin, i // self.COLUMNS, i % self.COLUMNS)
         self.spins.append(spin)
         self._update_buttons()
         if emit:
@@ -186,7 +200,9 @@ class DpiEditor(SettingEditor):
 
     def _remove(self):
         if len(self.spins) > 1:
-            self.spins.pop().deleteLater()
+            spin = self.spins.pop()
+            self.grid.removeWidget(spin)
+            spin.deleteLater()
             self._update_buttons()
             self._emit()
 
@@ -202,7 +218,9 @@ class DpiEditor(SettingEditor):
             value = [value]
         value = list(value or [800])[: self.spec.max_presets]
         while self.spins:
-            self.spins.pop().deleteLater()
+            spin = self.spins.pop()
+            self.grid.removeWidget(spin)
+            spin.deleteLater()
         for dpi in value:
             self._add(dpi)
 

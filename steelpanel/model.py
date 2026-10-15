@@ -23,6 +23,7 @@ ACTION = "action"    # no value, just triggers a command
 PERFORMANCE = "Performance"
 LIGHTING = "Lighting"
 MAPPING = "Buttons"
+POWER = "Power"
 GENERAL = "General"
 
 
@@ -41,6 +42,10 @@ class Setting:
     max_presets: int = 1
     allow_off: bool = False
     buttons: list[str] = field(default_factory=list)
+    #: Shown after numeric values, e.g. "min".
+    unit: str = ""
+    #: Text shown instead of the minimum value, e.g. "Never" for a 0 timer.
+    minimum_label: str = ""
 
 
 class Device(ABC):

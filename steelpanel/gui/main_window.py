@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFormLayout, QFrame, QHBoxLayout, QInputDialog, QLabel,
@@ -17,7 +17,8 @@ from ..model import Backend, Device
 from ..profiles import ProfileStore, apply_profile
 from .widgets import SettingEditor, make_editor
 
-GROUP_ORDER = [model.PERFORMANCE, model.LIGHTING, model.MAPPING, model.GENERAL]
+GROUP_ORDER = [model.PERFORMANCE, model.LIGHTING, model.MAPPING, model.POWER, model.GENERAL]
+INFO_REFRESH_MS = 60_000  # battery level of wireless devices
 ACCENT = "#ff5200"
 
 
@@ -52,11 +53,12 @@ class DevicePanel(QWidget):
         f.setBold(True)
         title.setFont(f)
         lay.addWidget(title)
-        info = device.info()
-        if info:
-            info_label = QLabel("   ·   ".join(f"{k}: {v}" for k, v in info.items()))
-            info_label.setStyleSheet("color: palette(placeholder-text);")
-            lay.addWidget(info_label)
+        self.info_label = QLabel()
+        self.info_label.setStyleSheet("color: palette(placeholder-text);")
+        lay.addWidget(self.info_label)
+        self.refresh_info()
+        self._info_timer = QTimer(self, interval=INFO_REFRESH_MS, timeout=self.refresh_info)
+        self._info_timer.start()
 
         tabs = QTabWidget()
         values = window.store.device_values(window.store.active, device.id)
@@ -90,6 +92,11 @@ class DevicePanel(QWidget):
             save.clicked.connect(lambda: window.save_onboard(device))
             row.addWidget(save)
         lay.addLayout(row)
+
+    def refresh_info(self) -> None:
+        info = self.device.info()
+        self.info_label.setText("   ·   ".join(f"{k}: {v}" for k, v in info.items()))
+        self.info_label.setVisible(bool(info))
 
 
 class MainWindow(QMainWindow):

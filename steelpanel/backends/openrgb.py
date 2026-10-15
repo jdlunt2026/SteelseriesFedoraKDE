@@ -171,4 +171,9 @@ class OpenRGBBackend(Backend):
             if dev.type == DeviceType.MOUSE or not is_steelseries(dev):
                 continue
             result.devices.append(OpenRGBDevice(dev))
+        if not result.devices:
+            result.problems.append(
+                "OpenRGB is running but found no SteelSeries keyboard. Newer models "
+                "(e.g. Apex Pro Gen 3) need OpenRGB 1.0 or later and its udev rules."
+            )
         return result
