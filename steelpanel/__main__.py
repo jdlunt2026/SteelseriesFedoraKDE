@@ -59,6 +59,8 @@ def _cmd_apply(name: str | None) -> int:
     for problem in found.problems:
         print(f"! {problem}", file=sys.stderr)
     errors = apply_profile(store, name, found.devices)
+    if any(v.get("software_buttons") for v in store.get(name).values()):
+        print("Note: button remapping is only active while the SteelPanel app runs.")
     for e in errors:
         print(f"! {e}", file=sys.stderr)
     print(f"Applied '{name}' to {len(found.devices)} device(s).")
@@ -68,14 +70,18 @@ def _cmd_apply(name: str | None) -> int:
 def _cmd_install_udev() -> int:
     from rivalcfg import udev
 
+    from . import udev as steelpanel_udev
+
     try:
         udev.write_rules_file()
+        steelpanel_udev.write_rules()
         udev.reload_rules()
         udev.trigger()
     except PermissionError:
         print("Permission denied: run this command with sudo.", file=sys.stderr)
         return 1
-    print(f"Wrote {udev.RULES_FILE_PATH}. Unplug and replug your mouse.")
+    print(f"Wrote {udev.RULES_FILE_PATH} and {steelpanel_udev.RULES_PATH}.")
+    print("Unplug and replug your mouse (or its dongle).")
     return 0
 
 

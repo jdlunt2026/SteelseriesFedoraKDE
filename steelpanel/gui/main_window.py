@@ -71,7 +71,7 @@ class DevicePanel(QWidget):
             form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
             form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
             for spec in by_group[group]:
-                editor = make_editor(spec, values.get(spec.key, spec.default))
+                editor = make_editor(spec, values.get(spec.key, spec.default), device)
                 editor.changed.connect(lambda v, k=spec.key: window.on_setting_changed(device, k, v))
                 self.editors[spec.key] = editor
                 form.addRow(spec.label, editor)
@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         tb.addAction("Delete", self.delete_profile)
         tb.addSeparator()
         tb.addAction("Re-apply", lambda: self.switch_profile(self.store.active))
-        tb.addAction("Rescan devices", self.refresh_devices)
+        tb.addAction("Rescan devices", lambda: self.refresh_devices())
 
         # Body: device list | settings.
         splitter = QSplitter()
@@ -159,7 +159,7 @@ class MainWindow(QMainWindow):
         self.refresh_devices(apply=True)
 
     # -- devices -------------------------------------------------------------
-    def refresh_devices(self, apply: bool = False) -> None:
+    def refresh_devices(self, apply: bool = True) -> None:
         for dev in self.devices:
             dev.close()
         found = discover_all(self.backends)

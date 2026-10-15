@@ -16,6 +16,9 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+# Software button remapping. On Fedora prefer `sudo dnf install python3-evdev`
+# (install.sh uses it), which avoids compiling the package.
+remap = ["evdev>=1.6"]
 
 [project.scripts]
 steelpanel = "steelpanel.__main__:main"

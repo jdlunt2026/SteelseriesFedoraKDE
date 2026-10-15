@@ -8,11 +8,12 @@ from typing import Any
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QCheckBox, QColorDialog, QComboBox, QFormLayout, QGridLayout, QHBoxLayout, QLabel,
-    QPushButton, QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget,
+    QAbstractItemView, QCheckBox, QColorDialog, QComboBox, QCompleter, QDialog,
+    QDialogButtonBox, QFormLayout, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
+    QPushButton, QSlider, QSpinBox, QTableWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
-from .. import model
+from .. import model, remap
 from ..model import Setting
 
 DEBOUNCE_MS = 300
@@ -265,6 +266,154 @@ class ButtonsEditor(SettingEditor):
             combo.setCurrentText(value.get(name, "default"))
 
 
+def key_picker(selected: str) -> QComboBox:
+    """Searchable picker of every key / mouse button (type to filter)."""
+    combo = QComboBox(editable=True, insertPolicy=QComboBox.NoInsert)
+    for name in remap.all_key_names():
+        label = remap.pretty(name)
+        combo.addItem(label if label == name else f"{label}  ({name})", name)
+    completer = combo.completer()
+    completer.setFilterMode(Qt.MatchContains)
+    completer.setCompletionMode(QCompleter.PopupCompletion)
+    idx = combo.findData(selected)
+    combo.setCurrentIndex(idx if idx >= 0 else 0)
+    return combo
+
+
+class CaptureDialog(QDialog):
+    """Waits for the user to press a button on the mouse."""
+
+    captured = Signal(str)  # emitted from the remapper thread; queued to GUI
+
+    def __init__(self, device, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add button mapping")
+        self.device = device
+        self.result_name: str | None = None
+        lay = QVBoxLayout(self)
+        msg = QLabel(f"Press the button on your <b>{device.name}</b> that you want to remap.<br>"
+                     "<small>The left button can't be remapped.</small>")
+        msg.setWordWrap(True)
+        lay.addWidget(msg)
+        self.status = QLabel()
+        self.status.setWordWrap(True)
+        self.status.setStyleSheet("color: #c0392b;")
+        lay.addWidget(self.status)
+        box = QDialogButtonBox(QDialogButtonBox.Cancel)
+        box.rejected.connect(self.reject)
+        lay.addWidget(box)
+        self.captured.connect(self._on_captured)
+        self._poll = QTimer(self, interval=500, timeout=self._show_status)
+        self._poll.start()
+
+    def exec(self) -> int:
+        try:
+            self.device.capture_button(self.captured.emit)
+        except Exception as exc:
+            self.status.setText(str(exc))
+        try:
+            return super().exec()
+        finally:
+            try:
+                self.device.capture_button(None)
+            except Exception:
+                pass
+
+    def _show_status(self):
+        self.status.setText(self.device.remap_status())
+
+    def _on_captured(self, name: str):
+        self.result_name = name
+        self.accept()
+
+
+class KeymapEditor(SettingEditor):
+    """Software remapping table: mouse button -> key/button it sends."""
+
+    def __init__(self, spec, device, parent=None):
+        super().__init__(spec, parent)
+        self.device = device
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["Mouse button", "Sends", ""])
+        self.table.verticalHeader().hide()
+        self.table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.setMinimumHeight(160)
+        outer.addWidget(self.table)
+        row = QHBoxLayout()
+        add = QPushButton("Add mapping…")
+        add.clicked.connect(self._add_interactive)
+        row.addWidget(add)
+        row.addStretch()
+        outer.addLayout(row)
+        note = QLabel("Remapping is done by SteelPanel and works while it runs "
+                      "(closing the window keeps it running in the tray).")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: palette(placeholder-text);")
+        outer.addWidget(note)
+        self.problem = QLabel(wordWrap=True)
+        self.problem.setStyleSheet("color: #c0392b;")
+        outer.addWidget(self.problem)
+        self._rows: list[tuple[str, QComboBox]] = []
+        self._status_timer = QTimer(self, interval=1000, timeout=self._show_status)
+        self._status_timer.start()
+        self._show_status()
+
+    def _show_status(self):
+        text = self.device.remap_status() if self.device else ""
+        self.problem.setText(text)
+        self.problem.setVisible(bool(text))
+
+    def _add_row(self, source: str, target: str):
+        for i, (src, combo) in enumerate(self._rows):
+            if src == source:  # already mapped: just focus it
+                combo.setFocus()
+                return
+        r = self.table.rowCount()
+        self.table.insertRow(r)
+        label = remap.pretty(source)
+        item_label = QLabel(f"  {label}  ({source})  " if label != source else f"  {source}  ")
+        item_label.setToolTip(source)
+        self.table.setCellWidget(r, 0, item_label)
+        combo = key_picker(target)
+        combo.currentIndexChanged.connect(self._emit)
+        self.table.setCellWidget(r, 1, combo)
+        remove = QToolButton(text="Remove")
+        remove.clicked.connect(lambda: self._remove(source))
+        self.table.setCellWidget(r, 2, remove)
+        self._rows.append((source, combo))
+
+    def _remove(self, source: str):
+        for i, (src, _) in enumerate(self._rows):
+            if src == source:
+                self.table.removeRow(i)
+                del self._rows[i]
+                break
+        self._emit()
+
+    def _add_interactive(self):
+        dialog = CaptureDialog(self.device, self)
+        if dialog.exec() == QDialog.Accepted and dialog.result_name:
+            # Start with "Middle click" so the mapping does something visible.
+            self._add_row(dialog.result_name, "BTN_MIDDLE")
+            self._emit()
+
+    def value(self):
+        return {src: combo.currentData() for src, combo in self._rows if combo.currentData()}
+
+    def _set(self, value):
+        self.table.setRowCount(0)
+        self._rows.clear()
+        for src, dst in (value or {}).items():
+            self._add_row(src, dst)
+
+
 class ActionEditor(SettingEditor):
     def __init__(self, spec, parent=None):
         super().__init__(spec, parent)
@@ -292,8 +441,11 @@ EDITORS = {
 }
 
 
-def make_editor(spec: Setting, value: Any) -> SettingEditor:
-    editor = EDITORS[spec.kind](spec)
+def make_editor(spec: Setting, value: Any, device=None) -> SettingEditor:
+    if spec.kind == model.KEYMAP:
+        editor = KeymapEditor(spec, device)
+    else:
+        editor = EDITORS[spec.kind](spec)
     editor.set_value(value)
     if spec.description:
         editor.setToolTip(spec.description)

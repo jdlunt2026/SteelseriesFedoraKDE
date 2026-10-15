@@ -7,8 +7,17 @@ cd "$(dirname "$0")"
 VENV="${STEELPANEL_VENV:-$HOME/.local/share/steelpanel/venv}"
 BIN="$HOME/.local/bin"
 
+# Button remapping uses python-evdev. Fedora packages it, which saves
+# compiling it (that would need gcc, python3-devel and kernel-headers).
+if ! python3 -c "import evdev" 2>/dev/null; then
+  echo "Note: python3-evdev is not installed; button remapping will be unavailable."
+  echo "      Install it with: sudo dnf install python3-evdev   (then re-run ./install.sh)"
+  echo
+fi
+
 echo "Creating virtual environment in $VENV"
-python3 -m venv "$VENV"
+# --system-site-packages lets the venv use Fedora's python3-evdev.
+python3 -m venv --clear --system-site-packages "$VENV"
 "$VENV/bin/pip" install --quiet --upgrade pip
 echo "Installing SteelPanel and its dependencies (PySide6 is ~200 MB, this can take a minute)"
 "$VENV/bin/pip" install --quiet .

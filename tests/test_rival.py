@@ -17,7 +17,7 @@ def test_every_supported_mouse_maps_and_accepts_defaults(ids):
     specs = mouse.settings()
     assert specs, "every mouse should expose at least one setting"
     # Every rivalcfg setting must be represented (no unknown handler skipped).
-    assert {s.key for s in specs} == set(mouse._mouse.mouse_profile["settings"])
+    assert {s.key for s in specs} - {"software_buttons"} == set(mouse._mouse.mouse_profile["settings"])
     for spec in specs:
         if spec.kind == model.ACTION:
             mouse.apply(spec.key, None)
@@ -117,3 +117,12 @@ def test_timer_units():
     specs = {s.key: s for s in RivalMouse(get_mouse(*AEROX9_WIRED)).settings()}
     assert (specs["sleep_timer"].unit, specs["sleep_timer"].minimum_label) == ("min", "Never")
     assert specs["dim_timer"].unit == "s"
+
+
+def test_aerox9_offers_software_remapping():
+    mouse = RivalMouse(get_mouse(*AEROX9_WIRED))
+    spec = next(s for s in mouse.settings() if s.key == "software_buttons")
+    assert spec.kind == model.KEYMAP and spec.group == model.MAPPING
+    assert set(mouse._remapper.products) == {0x185A, 0x1858}  # cable + dongle
+    # Mice with onboard mapping don't get it.
+    assert "software_buttons" not in {s.key for s in RivalMouse(get_mouse(0x1038, 0x1824)).settings()}

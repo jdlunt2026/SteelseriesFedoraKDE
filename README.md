@@ -6,9 +6,9 @@ the system tray.
 
 ![Mouse settings](docs/mouse.png)
 
-| Lighting | Power | Keyboard |
-|---|---|---|
-| ![](docs/mouse-lighting.png) | ![](docs/mouse-power.png) | ![](docs/keyboard.png) |
+| Lighting | Buttons | Power | Keyboard |
+|---|---|---|---|
+| ![](docs/mouse-lighting.png) | ![](docs/mouse-buttons.png) | ![](docs/mouse-power.png) | ![](docs/keyboard.png) |
 
 ## How it works
 
@@ -31,7 +31,29 @@ when both are present the cable is used.
 
 | Available | Not available on Linux |
 |---|---|
-| 5 DPI presets (100–18000), polling rate, 3 RGB zones, reactive (click) color, rainbow effect, startup lighting, sleep and dim timers, battery level, save to onboard memory | Button remapping (rivalcfg doesn't support it for this mouse), Bluetooth mode |
+| 5 DPI presets (100–18000), polling rate, 3 RGB zones, reactive (click) color, rainbow effect, startup lighting, sleep and dim timers, battery level, save to onboard memory, button remapping (software) | Onboard button remapping, angle snapping, Bluetooth mode |
+
+### Button remapping (software)
+
+rivalcfg can't program the Aerox 9's onboard button mapping, so SteelPanel
+remaps buttons itself: **Buttons tab → Add mapping…**, press the button on
+the mouse, then pick what it should send (any key or mouse button; type to
+search). Mappings are saved in your profile.
+
+- It works while SteelPanel runs (closing the window keeps it in the tray;
+  use the autostart entry below to start it at login). Quit SteelPanel and
+  the mouse is back to normal.
+- It works below the desktop, so on Wayland and X11 alike. Remapped buttons
+  come from a virtual device named "SteelPanel virtual …".
+- Only the mouse's input interface carrying a remapped button is taken over.
+  The side buttons are on their own interface, so remapping them doesn't
+  route pointer movement through SteelPanel. Remapping back/forward or
+  middle click does.
+- The left button can't be remapped.
+- It needs `sudo dnf install python3-evdev` and the udev rules from
+  `sudo steelpanel --install-udev` (run it again if you installed them
+  before this feature; then replug the dongle). Those rules let your desktop
+  session read this mouse's input and create virtual input devices.
 
 **Apex Pro Gen 3:** lighting only, through OpenRGB, which recognises this
 keyboard from **version 1.0** (September 2026). Older OpenRGB versions won't
@@ -41,6 +63,7 @@ the OLED screen are only configurable in SteelSeries GG.
 ## Install
 
 ```bash
+sudo dnf install python3-evdev   # for button remapping
 git clone https://github.com/jdlunt2026/SteelseriesFedoraKDE.git
 cd SteelseriesFedoraKDE
 ./install.sh
@@ -122,6 +145,8 @@ their settings as `Setting` specs) and register it in
 steelpanel/
   model.py            Device / Setting / Backend abstractions
   profiles.py         JSON profile store + apply_profile()
+  remap.py            software button remapping (evdev/uinput)
+  udev.py             udev rules for remapping
   backends/rival.py   mice via rivalcfg
   backends/openrgb.py keyboards via OpenRGB SDK
   gui/                PySide6 window, per-setting editor widgets

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .. import model
+from .. import model, remap
 from ..model import Backend, Device, DiscoveryResult, Setting
 
 try:
@@ -82,6 +82,12 @@ def to_hex(color: Any) -> str | None:
         except ValueError:
             return None
     return None
+
+
+def family_product_ids(vendor_id: int, name: str) -> list[int]:
+    """USB product ids of every connection mode of the mouse called `name`."""
+    return [pid for (vid, pid), prof in rival_devices.PROFILES.items()
+            if vid == vendor_id and split_connection(prof["name"])[0] == name]
 
 
 def parse_buttons(value: str | dict | None, names: list[str]) -> dict[str, str]:
@@ -171,6 +177,17 @@ class RivalMouse(Device):
         self.id = f"mouse:{self.name}"
         self.supports_onboard_save = "save_command" in mouse.mouse_profile
         self._settings = settings_from_profile(mouse.mouse_profile)
+        self._remapper = None
+        if "buttons_mapping" not in mouse.mouse_profile["settings"]:
+            # No onboard remapping for this mouse in rivalcfg: offer software
+            # remapping instead (see steelpanel/remap.py).
+            self._remapper = remap.Remapper(
+                mouse.vendor_id, family_product_ids(mouse.vendor_id, self.name), self.name)
+            self._settings.append(Setting(
+                key="software_buttons", label="Button remapping", kind=model.KEYMAP,
+                group=model.MAPPING, default={},
+                description="Remaps buttons while SteelPanel is running",
+            ))
         self._by_key = {s.key: s for s in self._settings}
 
     def settings(self) -> list[Setting]:
@@ -178,6 +195,9 @@ class RivalMouse(Device):
 
     def apply(self, key: str, value: Any) -> None:
         spec = self._by_key[key]
+        if spec.kind == model.KEYMAP:
+            self._remapper.set_mapping(value or {})
+            return
         setter = getattr(self._mouse, f"set_{key}")
         if spec.kind == model.ACTION:
             setter()
@@ -212,7 +232,17 @@ class RivalMouse(Device):
             pass
         return lines
 
+    def capture_button(self, callback) -> None:
+        if self._remapper is None:
+            super().capture_button(callback)
+        self._remapper.capture(callback)
+
+    def remap_status(self) -> str:
+        return self._remapper.status if self._remapper else ""
+
     def close(self) -> None:
+        if self._remapper is not None:
+            self._remapper.stop()
         try:
             self._mouse.close()
         except Exception:

@@ -55,3 +55,40 @@ def test_keyboard_panel(window):
     w, app = window
     w.device_list.setCurrentRow(1)
     assert set(w.panel.editors) >= {"mode", "brightness", "speed", "color", "zone0"}
+
+
+def test_keymap_capture_flow(qtbot_free_app=None):
+    import threading
+
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+
+    from steelpanel import model
+    from steelpanel.gui.widgets import KeymapEditor
+
+    app = QApplication.instance() or QApplication([])
+
+    class StubDevice:
+        name = "Aerox 9"
+        calls = []
+
+        def capture_button(self, cb):
+            self.calls.append(cb)
+            if cb:  # simulate a press arriving on the remapper thread
+                threading.Timer(0.05, cb, args=("KEY_3",)).start()
+
+        def remap_status(self):
+            return ""
+
+    spec = model.Setting(key="software_buttons", label="Remap", kind=model.KEYMAP, default={})
+    dev = StubDevice()
+    editor = KeymapEditor(spec, dev)
+    editor.set_value({"KEY_1": "KEY_F13"})
+    emitted = []
+    editor.changed.connect(emitted.append)
+    QTimer.singleShot(2000, app.closeAllWindows)  # safety net
+    editor._add_interactive()
+    assert emitted[-1] == {"KEY_1": "KEY_F13", "KEY_3": "BTN_MIDDLE"}
+    assert dev.calls[-1] is None  # capture cancelled after the dialog closed
+    editor._remove("KEY_1")
+    assert emitted[-1] == {"KEY_3": "BTN_MIDDLE"}

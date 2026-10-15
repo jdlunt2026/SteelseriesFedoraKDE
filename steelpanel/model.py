@@ -17,6 +17,7 @@ RANGE = "range"      # int in [minimum, maximum] by `step`
 COLOR = "color"      # "#rrggbb" (or None when `allow_off`)
 DPI = "dpi"          # list of 1..max_presets ints in [minimum, maximum]
 BUTTONS = "buttons"  # dict of button name -> action string
+KEYMAP = "keymap"    # dict of evdev code name -> evdev code name (software remap)
 ACTION = "action"    # no value, just triggers a command
 
 # Groups (one tab each in the GUI).
@@ -71,6 +72,15 @@ class Device(ABC):
     def info(self) -> dict[str, str]:
         """Read-only status lines (battery, firmware, ...)."""
         return {}
+
+    # Software button remapping (KEYMAP settings) -------------------------
+    def capture_button(self, callback) -> None:
+        """Call `callback(code_name)` on the next button press; None cancels."""
+        raise NotImplementedError
+
+    def remap_status(self) -> str:
+        """Problem preventing software remapping, or "" when it works."""
+        return ""
 
     def close(self) -> None:
         pass
