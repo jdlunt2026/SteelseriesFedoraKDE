@@ -12,6 +12,23 @@ import argparse
 import sys
 
 
+def _describe(spec) -> str:
+    """Options and current/default value, for --list."""
+    from . import model
+
+    unit = f" {spec.unit}" if spec.unit else ""
+    if spec.kind == model.CHOICE:
+        opts = ", ".join(str(c) for c in spec.choices)
+        return f"\n      options: {opts}\n      current/default: {spec.default}"
+    if spec.kind in (model.RANGE, model.DPI):
+        extra = f", up to {spec.max_presets} presets" if spec.kind == model.DPI else ""
+        return (f"\n      range: {spec.minimum}-{spec.maximum}{unit} step {spec.step}{extra}"
+                f"\n      current/default: {spec.default}")
+    if spec.kind == model.COLOR and spec.default:
+        return f"\n      current/default: {spec.default}"
+    return ""
+
+
 def _cmd_list() -> int:
     from .backends import default_backends, discover_all
 
@@ -25,7 +42,7 @@ def _cmd_list() -> int:
         for k, v in dev.info().items():
             print(f"    {k}: {v}")
         for s in dev.settings():
-            print(f"  - {s.key} ({s.kind}, {s.group}): {s.label}")
+            print(f"  - {s.key} ({s.kind}, {s.group}): {s.label}{_describe(s)}")
     return 0
 
 
