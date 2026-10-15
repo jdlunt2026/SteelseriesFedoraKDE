@@ -41,10 +41,15 @@ the OLED screen are only configurable in SteelSeries GG.
 ## Install
 
 ```bash
-python3 -m venv ~/.local/share/steelpanel-venv
-~/.local/share/steelpanel-venv/bin/pip install .
-ln -s ~/.local/share/steelpanel-venv/bin/steelpanel ~/.local/bin/steelpanel
+git clone https://github.com/jdlunt2026/SteelseriesFedoraKDE.git
+cd SteelseriesFedoraKDE
+./install.sh
 ```
+
+This installs into `~/.local/share/steelpanel/venv`, puts a `steelpanel`
+command in `~/.local/bin` (already on PATH on Fedora; open a new terminal if
+it isn't found), and adds SteelPanel to the app launcher. Run `git pull &&
+./install.sh` to update.
 
 On Fedora KDE everything needed is already installed (Python 3 and the Qt
 libraries). The app follows your Plasma theme and shows up in the system tray.
@@ -52,7 +57,7 @@ libraries). The app follows your Plasma theme and shows up in the system tray.
 ### Mice: allow access without root
 
 ```bash
-sudo ~/.local/share/steelpanel-venv/bin/steelpanel --install-udev
+sudo ~/.local/share/steelpanel/venv/bin/steelpanel --install-udev
 ```
 
 Then unplug and replug the mouse.
@@ -88,7 +93,6 @@ steelpanel --hidden         # start in the tray
 
   ```bash
   cp packaging/steelpanel-autostart.desktop ~/.config/autostart/
-  cp packaging/steelpanel.desktop ~/.local/share/applications/
   ```
 
 ## Development
