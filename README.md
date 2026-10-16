@@ -17,7 +17,7 @@ SteelPanel builds on two open-source projects that reverse-engineered them:
 
 | Device | Backend | What you can change |
 |---|---|---|
-| Mice (Rival, Aerox, Prime, Sensei, Kana, Kinzu; ~70 models) | [rivalcfg](https://github.com/flozz/rivalcfg), direct USB HID | DPI presets, polling rate, LED colors and effects, button mapping, model-specific options, saving to onboard memory |
+| Mice (Rival, Aerox, Prime, Sensei, Kana, Kinzu; ~70 models) | [rivalcfg](https://github.com/flozz/rivalcfg), direct USB HID | DPI presets, polling rate, LED colors and effects, button mapping, model-specific options, saving to onboard memory, angle snapping (software) |
 | Keyboards (Apex) and other RGB gear | [OpenRGB](https://openrgb.org) SDK server | Lighting effect, color, per-zone color, brightness, effect speed |
 
 The GUI is generated from each device's capability description, so any mouse
@@ -31,7 +31,7 @@ when both are present the cable is used.
 
 | Available | Not available on Linux |
 |---|---|
-| 5 DPI presets (100–18000), polling rate, 3 RGB zones, reactive (click) color, rainbow effect, startup lighting, sleep and dim timers, battery level, save to onboard memory, button remapping (software) | Onboard button remapping, angle snapping, Bluetooth mode |
+| 5 DPI presets (100–18000), polling rate, 3 RGB zones, reactive (click) color, rainbow effect, startup lighting, sleep and dim timers, battery level, save to onboard memory, button remapping (software), angle snapping (software) | Onboard button remapping, Bluetooth mode |
 
 ### Button remapping (software)
 
@@ -54,6 +54,24 @@ search). Mappings are saved in your profile.
   `sudo steelpanel --install-udev` (run it again if you installed them
   before this feature; then replug the dongle). Those rules let your desktop
   session read this mouse's input and create virtual input devices.
+
+### Angle snapping (software)
+
+SteelSeries GG does angle snapping on the PC, not in the mouse (it stops
+working when GG is closed), so SteelPanel does the same: **Performance tab →
+Angle snapping**, set to how many degrees off horizontal or vertical still
+count as a straight line. Around 10° is a good start; Off disables it. It's
+offered for every supported mouse and saved in your profile.
+
+- It works while SteelPanel runs, like button remapping, and the same way:
+  the mouse's pointer device is taken over and its movement is re-sent from
+  "SteelPanel virtual …", on Wayland and X11 alike.
+- Movement close to an axis is straightened; steeper diagonals pass
+  unchanged. The direction is judged over the last few millimetres of
+  movement, so small hand wobble doesn't break a line.
+- Same requirements as button remapping: `python3-evdev` and the udev
+  rules from `sudo steelpanel --install-udev` (run it again if you
+  installed them before this feature; the rules now cover every mouse).
 
 **Apex Pro Gen 3:** lighting only, through OpenRGB, which recognises this
 keyboard from **version 1.0** (September 2026). Older OpenRGB versions won't
@@ -145,7 +163,7 @@ their settings as `Setting` specs) and register it in
 steelpanel/
   model.py            Device / Setting / Backend abstractions
   profiles.py         JSON profile store + apply_profile()
-  remap.py            software button remapping (evdev/uinput)
+  remap.py            software button remapping and angle snapping (evdev/uinput)
   udev.py             udev rules for remapping
   backends/rival.py   mice via rivalcfg
   backends/openrgb.py keyboards via OpenRGB SDK

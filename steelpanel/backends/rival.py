@@ -177,12 +177,19 @@ class RivalMouse(Device):
         self.id = f"mouse:{self.name}"
         self.supports_onboard_save = "save_command" in mouse.mouse_profile
         self._settings = settings_from_profile(mouse.mouse_profile)
-        self._remapper = None
-        if "buttons_mapping" not in mouse.mouse_profile["settings"]:
-            # No onboard remapping for this mouse in rivalcfg: offer software
-            # remapping instead (see steelpanel/remap.py).
-            self._remapper = remap.Remapper(
-                mouse.vendor_id, family_product_ids(mouse.vendor_id, self.name), self.name)
+        # Software input filtering (see steelpanel/remap.py): angle snapping
+        # for every mouse, button remapping where rivalcfg can't do it onboard.
+        self._remapper = remap.Remapper(
+            mouse.vendor_id, family_product_ids(mouse.vendor_id, self.name), self.name)
+        self._settings.append(Setting(
+            key="angle_snapping", label="Angle snapping", kind=model.RANGE,
+            group=model.PERFORMANCE, default=0, minimum=0, maximum=30, unit="°",
+            minimum_label="Off",
+            description="Straightens nearly horizontal and vertical movement while "
+                        "SteelPanel is running (degrees of tolerance; about 10 is a good start)",
+        ))
+        self.has_software_buttons = "buttons_mapping" not in mouse.mouse_profile["settings"]
+        if self.has_software_buttons:
             self._settings.append(Setting(
                 key="software_buttons", label="Button remapping", kind=model.KEYMAP,
                 group=model.MAPPING, default={},
@@ -197,6 +204,9 @@ class RivalMouse(Device):
         spec = self._by_key[key]
         if spec.kind == model.KEYMAP:
             self._remapper.set_mapping(value or {})
+            return
+        if key == "angle_snapping":
+            self._remapper.set_angle_snapping(value or 0)
             return
         setter = getattr(self._mouse, f"set_{key}")
         if spec.kind == model.ACTION:
@@ -233,16 +243,15 @@ class RivalMouse(Device):
         return lines
 
     def capture_button(self, callback) -> None:
-        if self._remapper is None:
+        if not self.has_software_buttons:
             super().capture_button(callback)
         self._remapper.capture(callback)
 
     def remap_status(self) -> str:
-        return self._remapper.status if self._remapper else ""
+        return self._remapper.status
 
     def close(self) -> None:
-        if self._remapper is not None:
-            self._remapper.stop()
+        self._remapper.stop()
         try:
             self._mouse.close()
         except Exception:

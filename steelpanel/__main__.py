@@ -59,8 +59,8 @@ def _cmd_apply(name: str | None) -> int:
     for problem in found.problems:
         print(f"! {problem}", file=sys.stderr)
     errors = apply_profile(store, name, found.devices)
-    if any(v.get("software_buttons") for v in store.get(name).values()):
-        print("Note: button remapping is only active while the SteelPanel app runs.")
+    if any(v.get("software_buttons") or v.get("angle_snapping") for v in store.get(name).values()):
+        print("Note: button remapping and angle snapping are only active while the SteelPanel app runs.")
     for e in errors:
         print(f"! {e}", file=sys.stderr)
     print(f"Applied '{name}' to {len(found.devices)} device(s).")

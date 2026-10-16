@@ -6,7 +6,7 @@ evdev = pytest.importorskip("evdev")
 from evdev import ecodes as e
 
 from steelpanel import remap
-from steelpanel.remap import Remapper
+from steelpanel.remap import AngleSnapper, Remapper
 
 VID, WIRELESS, WIRED = 0x1038, 0x1858, 0x185A
 
@@ -196,3 +196,94 @@ def test_key_names():
     names = remap.all_key_names()
     assert names[0] == "BTN_MIDDLE" and "KEY_F13" in names and "KEY_RESERVED" not in names
     assert remap.pretty("KEY_F13") == "F13" and remap.pretty("BTN_EXTRA") == "Forward (mouse 5)"
+
+
+# -- angle snapping ---------------------------------------------------------
+
+
+def stroke(snapper, moves, dt=0.001):
+    return [snapper.filter(dx, dy, i * dt) for i, (dx, dy) in enumerate(moves)]
+
+
+def test_snapper_straightens_near_horizontal_and_vertical():
+    # ~6 degrees off horizontal, as 1000 Hz reports: mostly (1, 0), every
+    # tenth report (1, 1).
+    moves = [(1, 1 if i % 10 == 9 else 0) for i in range(50)]
+    assert all(dy == 0 for _, dy in stroke(AngleSnapper(10), moves))
+    vertical = [(1 if i % 10 == 9 else 0, -2) for i in range(50)]
+    assert all(dx == 0 for dx, _ in stroke(AngleSnapper(10), vertical))
+
+
+def test_snapper_passes_diagonals_and_respects_angle():
+    diagonal = [(2, 1)] * 30  # ~27 degrees
+    assert stroke(AngleSnapper(10), diagonal)[-1] == (2, 1)
+    assert stroke(AngleSnapper(30), diagonal)[-1] == (2, 0)
+
+
+def test_snapper_new_stroke_starts_fresh():
+    s = AngleSnapper(10)
+    stroke(s, [(5, 0)] * 20)
+    # After a pause, a vertical move must not be judged by the old direction.
+    assert s.filter(0, 3, 1.0) == (0, 3)
+    assert s.filter(0, 0, 1.001) == (0, 0)
+
+
+def test_snapping_grabs_only_the_pointer(aerox):
+    r, b = aerox
+    r._snap_degrees = 10.0
+    r.reconcile()
+    assert set(r._sources) == {"/dev/input/event5"}
+    assert src(r, "/dev/input/event5").grabbed
+    caps = b.uinputs[-1].caps
+    assert {e.REL_X, e.REL_Y} <= set(caps[e.EV_REL]) and e.BTN_LEFT in caps[e.EV_KEY]
+
+
+def test_snapping_filters_frames_and_forwards_the_rest(aerox):
+    r, b = aerox
+    r._snap_degrees = 10.0
+    r.reconcile()
+    ptr = src(r, "/dev/input/event5")
+    ptr.queue = [ev(e.EV_REL, e.REL_X, 8), ev(e.EV_REL, e.REL_Y, 1), ev(e.EV_KEY, e.BTN_LEFT, 1),
+                 ev(e.EV_SYN, e.SYN_REPORT, 0),
+                 ev(e.EV_REL, e.REL_WHEEL, -1), ev(e.EV_SYN, e.SYN_REPORT, 0)]
+    r.process(ptr)
+    assert b.uinputs[-1].written == [
+        (e.EV_KEY, e.BTN_LEFT, 1), (e.EV_REL, e.REL_X, 8), (e.EV_SYN, e.SYN_REPORT, 0),
+        (e.EV_REL, e.REL_WHEEL, -1), (e.EV_SYN, e.SYN_REPORT, 0)]
+
+
+def test_snapping_and_remapping_share_one_virtual_device(aerox):
+    r, b = aerox
+    r._snap_degrees = 10.0
+    r._mapping = {e.KEY_1: e.KEY_F13}
+    r.reconcile()
+    assert all(s.grabbed for s in r._sources.values()) and len(r._sources) == 2
+    assert len(b.uinputs) == 1
+    caps = b.uinputs[-1].caps
+    assert e.KEY_F13 in caps[e.EV_KEY] and e.REL_X in caps[e.EV_REL]
+
+
+def test_set_angle_snapping_starts_and_stops_thread(aerox):
+    r, b = aerox
+    r.set_angle_snapping(10)
+    import time
+    for _ in range(100):
+        if r._sources:
+            break
+        time.sleep(0.01)
+    ptr = src(r, "/dev/input/event5")
+    assert ptr.grabbed
+    r.set_angle_snapping(0)  # off -> thread exits and releases the mouse
+    r._thread.join(timeout=2)
+    assert ptr.closed and not ptr.grabbed
+
+
+def test_snapper_stays_snapped_through_a_small_wobble():
+    s = AngleSnapper(10)
+    stroke(s, [(2, 0)] * 40)
+    # ~12 degrees for a while: above the angle, below the 15 degree release.
+    wobble = [s.filter(5, 1, 0.04 + i * 0.001) for i in range(40)]
+    assert all(dy == 0 for _, dy in wobble)
+    # A real turn (45 degrees) is let through.
+    turn = [s.filter(2, 2, 0.08 + i * 0.001) for i in range(40)]
+    assert turn[-1] == (2, 2)

@@ -17,7 +17,7 @@ def test_every_supported_mouse_maps_and_accepts_defaults(ids):
     specs = mouse.settings()
     assert specs, "every mouse should expose at least one setting"
     # Every rivalcfg setting must be represented (no unknown handler skipped).
-    assert {s.key for s in specs} - {"software_buttons"} == set(mouse._mouse.mouse_profile["settings"])
+    assert {s.key for s in specs} - {"software_buttons", "angle_snapping"} == set(mouse._mouse.mouse_profile["settings"])
     for spec in specs:
         if spec.kind == model.ACTION:
             mouse.apply(spec.key, None)
@@ -126,3 +126,16 @@ def test_aerox9_offers_software_remapping():
     assert set(mouse._remapper.products) == {0x185A, 0x1858}  # cable + dongle
     # Mice with onboard mapping don't get it.
     assert "software_buttons" not in {s.key for s in RivalMouse(get_mouse(0x1038, 0x1824)).settings()}
+
+
+def test_every_mouse_offers_software_angle_snapping():
+    for ids in (AEROX9_WIRED, (0x1038, 0x1824)):
+        mouse = RivalMouse(get_mouse(*ids))
+        spec = next(s for s in mouse.settings() if s.key == "angle_snapping")
+        assert spec.kind == model.RANGE and spec.group == model.PERFORMANCE
+        assert spec.default == 0 and spec.minimum_label == "Off"
+    calls = []
+    mouse._remapper.set_angle_snapping = calls.append
+    mouse.apply("angle_snapping", 10)
+    mouse.apply("angle_snapping", 0)
+    assert calls == [10, 0]

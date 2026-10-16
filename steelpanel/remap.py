@@ -9,6 +9,9 @@ Aerox 9 Wireless). How it works:
   (exclusive access). Their events are re-emitted through one virtual
   "SteelPanel" device, with remapped buttons translated. If no remapped
   button lives on the pointer device, pointer movement never goes through us.
+* Angle snapping (also done in software by SteelSeries GG) grabs the pointer
+  device instead and straightens movement that is close to horizontal or
+  vertical before re-emitting it; see :class:`AngleSnapper`.
 * This happens below the display server, so it works the same on Wayland and
   X11. It only lasts while SteelPanel runs; closing it releases the grab and
   the mouse behaves normally again.
@@ -19,6 +22,7 @@ Mappings are stored by evdev code names, e.g. ``{"KEY_1": "KEY_F13"}``.
 from __future__ import annotations
 
 import logging
+import math
 import select
 import threading
 import time
@@ -147,15 +151,71 @@ def _sysfs_ids(path: str) -> tuple[int, int] | None:
         return None
 
 
+class AngleSnapper:
+    """Straightens pointer movement that is within `degrees` of an axis.
+
+    At 1000 Hz a single report is only a count or two, far too coarse to tell
+    a direction from, so the direction is estimated from roughly the last
+    `window` counts of movement. While it is within `degrees` of horizontal,
+    vertical movement is dropped (and vice versa); steeper diagonals pass
+    unchanged. Once snapped, a stroke stays snapped until it turns past
+    `release` times the angle, so a slightly wobbly line doesn't flicker in
+    and out. The estimate resets after `idle` seconds without movement, so
+    each new stroke starts fresh.
+    """
+
+    def __init__(self, degrees: float, window: float = 32.0, release: float = 1.5,
+                 idle: float = 0.05):
+        self.tan = math.tan(math.radians(degrees))
+        self.release_tan = math.tan(math.radians(min(degrees * release, 44.0)))
+        self.window = window
+        self.idle = idle
+        self._sx = self._sy = 0.0
+        self._axis: str | None = None  # "x" or "y" while snapped
+        self._last: float | None = None
+
+    def filter(self, dx: int, dy: int, now: float) -> tuple[int, int]:
+        if not (dx or dy):
+            return 0, 0
+        if self._last is None or now - self._last > self.idle:
+            self._sx = self._sy = 0.0
+            self._axis = None
+        self._last = now
+        decay = math.exp(-math.hypot(dx, dy) / self.window)
+        self._sx = self._sx * decay + dx
+        self._sy = self._sy * decay + dy
+        ax, ay = abs(self._sx), abs(self._sy)
+        if self._axis == "x" and ay <= ax * self.release_tan:
+            return dx, 0
+        if self._axis == "y" and ax <= ay * self.release_tan:
+            return 0, dy
+        if ay <= ax * self.tan:
+            self._axis = "x"
+            return dx, 0
+        if ax <= ay * self.tan:
+            self._axis = "y"
+            return 0, dy
+        self._axis = None
+        return dx, dy
+
+
 @dataclass
 class _Source:
     dev: object
     grabbed: bool = False
     keys: set[int] = field(default_factory=set)
+    #: Events of this device go through the virtual device.
+    forward: bool = False
+    #: Set on the pointer device while angle snapping is on.
+    snapper: AngleSnapper | None = None
+    #: Movement of the current (not yet SYN_REPORTed) frame, when snapping.
+    dx: int = 0
+    dy: int = 0
 
 
 class Remapper:
-    """Remaps buttons of every input device belonging to one physical mouse.
+    """Remaps buttons of, and optionally snaps the movement of, every input
+    device belonging to one physical mouse.
 
     Thread model: :meth:`start` runs :meth:`_loop` in a daemon thread. The
     public setters only update state under a lock and flag a reconfigure;
@@ -174,6 +234,7 @@ class Remapper:
             "then re-run ./install.sh")
         self._lock = threading.Lock()
         self._mapping: dict[int, int] = {}
+        self._snap_degrees = 0.0
         self._capture: Callable[[str], None] | None = None
         self._dirty = True
         self._sources: dict[str, _Source] = {}
@@ -195,6 +256,19 @@ class Remapper:
             self._mapping = codes
             self._dirty = True
         if codes:
+            self.start()
+
+    def set_angle_snapping(self, degrees: float) -> None:
+        """Snap movement within `degrees` of horizontal/vertical; 0 turns it off."""
+        degrees = max(0.0, min(float(degrees or 0), 45.0))
+        if degrees and self.backend is None:
+            raise RuntimeError(self.status.replace("Button remapping", "Angle snapping"))
+        with self._lock:
+            if degrees == self._snap_degrees:
+                return
+            self._snap_degrees = degrees
+            self._dirty = True
+        if degrees:
             self.start()
 
     def capture(self, callback: Callable[[str], None] | None) -> None:
@@ -228,7 +302,7 @@ class Remapper:
             while not self._stop.is_set():
                 self.reconcile()
                 with self._lock:
-                    idle = not self._mapping and self._capture is None
+                    idle = not self._mapping and not self._snap_degrees and self._capture is None
                 if idle:
                     self._close_all()
                     return  # nothing to do; set_mapping/capture restarts us
@@ -251,6 +325,7 @@ class Remapper:
         with self._lock:
             dirty, self._dirty = self._dirty, False
             mapping = dict(self._mapping)
+            snap = self._snap_degrees
             capturing = self._capture is not None
         if not (dirty or force_scan or now - self._last_scan > self.rescan_interval):
             return
@@ -271,8 +346,10 @@ class Remapper:
                 d.close()
         wanted: dict[str, bool] = {}  # path -> needs grab
         for path, dev in found.items():
-            keys = set(dev.capabilities().get(ecodes.EV_KEY, []))
-            grab = bool(keys & mapping.keys())
+            caps = dev.capabilities()
+            keys = set(caps.get(ecodes.EV_KEY, []))
+            pointer = {ecodes.REL_X, ecodes.REL_Y} <= set(caps.get(ecodes.EV_REL, []))
+            grab = bool(keys & mapping.keys()) or bool(snap and pointer)
             if grab or capturing:
                 wanted[path] = grab
         # Close devices that went away or whose role changed.
@@ -287,7 +364,12 @@ class Remapper:
             if path not in wanted:
                 dev.close()
                 continue
-            self._sources[path] = _Source(dev=dev, keys=set(dev.capabilities().get(ecodes.EV_KEY, [])))
+            src = _Source(dev=dev, keys=set(dev.capabilities().get(ecodes.EV_KEY, [])),
+                          forward=wanted[path])
+            rel = set(dev.capabilities().get(ecodes.EV_REL, []))
+            if snap and {ecodes.REL_X, ecodes.REL_Y} <= rel:
+                src.snapper = AngleSnapper(snap)
+            self._sources[path] = src
         try:
             self._open_virtual(mapping)
             for src in self._sources.values():
@@ -303,19 +385,17 @@ class Remapper:
             self._close_all()
             self.status = f"Could not set up button remapping: {exc}"
             return
-        if not found and (mapping or capturing):
+        if not found and (mapping or snap or capturing):
             self.status = f"Waiting for {self.label}… (no input device found)"
         else:
             self.status = ""
 
     def _open_virtual(self, mapping: dict[int, int]) -> None:
-        sources = list(self._sources.values())
-        if not mapping or not any(s.keys & mapping.keys() for s in sources):
+        sources = [s for s in self._sources.values() if s.forward]
+        if not sources:
             return
         caps: dict[int, set] = {ecodes.EV_KEY: set(), ecodes.EV_REL: set(), ecodes.EV_MSC: set()}
         for src in sources:
-            if not src.keys & mapping.keys():
-                continue
             for etype, codes in src.dev.capabilities().items():
                 if etype in caps:
                     caps[etype].update(c for c in codes if isinstance(c, int))
@@ -352,9 +432,24 @@ class Remapper:
                         self._dirty = True
                     capture(name)
                     capture = None
-            if src.grabbed and self._uinput is not None:
-                code = mapping.get(ev.code, ev.code) if ev.type == ecodes.EV_KEY else ev.code
-                self._uinput.write(ev.type, code, ev.value)
+            if not (src.grabbed and self._uinput is not None):
+                continue
+            if src.snapper is not None and ev.type == ecodes.EV_REL and ev.code in (ecodes.REL_X, ecodes.REL_Y):
+                # Hold the movement back until the frame is complete.
+                if ev.code == ecodes.REL_X:
+                    src.dx += ev.value
+                else:
+                    src.dy += ev.value
+                continue
+            if src.snapper is not None and ev.type == ecodes.EV_SYN and ev.code == ecodes.SYN_REPORT:
+                dx, dy = src.snapper.filter(src.dx, src.dy, time.monotonic())
+                src.dx = src.dy = 0
+                if dx:
+                    self._uinput.write(ecodes.EV_REL, ecodes.REL_X, dx)
+                if dy:
+                    self._uinput.write(ecodes.EV_REL, ecodes.REL_Y, dy)
+            code = mapping.get(ev.code, ev.code) if ev.type == ecodes.EV_KEY else ev.code
+            self._uinput.write(ev.type, code, ev.value)
 
     def _close_all(self) -> None:
         for src in self._sources.values():
