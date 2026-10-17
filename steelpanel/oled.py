@@ -54,7 +54,8 @@ class ScreenModel:
 
 
 MODELS: dict[int, ScreenModel] = {
-    0x1640: ScreenModel("Apex Pro Gen 3", interface=1, layout="page", report_id=0x00),
+    0x1640: ScreenModel("Apex Pro Gen 3", interface=1, layout="page", report_id=0x00,
+                     verified=True),
     0x1610: ScreenModel("Apex Pro", interface=1, layout="rows"),
     0x1612: ScreenModel("Apex 7", interface=1, layout="rows"),
     0x1614: ScreenModel("Apex Pro TKL", interface=1, layout="rows"),

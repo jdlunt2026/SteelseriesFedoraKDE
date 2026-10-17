@@ -172,7 +172,8 @@ def test_keyboard_screen_device():
     dev.apply("text", "Hi")
     dev.apply("mode", "Text")
     assert calls == [{"text": "Hi"}, {"mode": "Text"}]
-    assert dev.info()["Support"] == "experimental"
+    assert "Support" not in dev.info()  # confirmed on real hardware
+    assert KeyboardScreen(FakeScreen(0x1614)).info()["Support"] == "experimental"
 
 
 def test_backend_finds_one_device_per_keyboard(monkeypatch):
