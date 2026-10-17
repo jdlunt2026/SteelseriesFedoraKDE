@@ -151,8 +151,18 @@ def _cmd_watch_buttons() -> int:
     if not found:
         print("No SteelSeries mouse input device found.", file=sys.stderr)
         return 1
+    busy = False
     for d in found:
-        print(f"listening: {d.path}  {d.name}  ({d.info.vendor:04x}:{d.info.product:04x})")
+        note = ""
+        try:  # another program holding the device exclusively hides its events
+            d.grab()
+            d.ungrab()
+        except OSError:
+            note, busy = "  [in use by another program: its events won't show here]", True
+        print(f"listening: {d.path}  {d.name}  ({d.info.vendor:04x}:{d.info.product:04x}){note}")
+    if busy:
+        print("Some devices are in use, usually by a running SteelPanel (angle snapping or "
+              "remapping). Quit it, including the tray icon, and try again.")
     print("Press buttons on the mouse (Ctrl+C to stop). Buttons that print nothing "
           "are handled inside the mouse and can't be remapped by SteelPanel.")
     ecodes = remap.ecodes
