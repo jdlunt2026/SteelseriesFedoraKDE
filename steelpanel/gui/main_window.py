@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import model
+from .. import autostart, model
 from ..backends import discover_all
 from ..model import Backend, Device
 from ..profiles import ProfileStore, apply_profile
@@ -124,6 +124,14 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction("Re-apply", lambda: self.switch_profile(self.store.active))
         tb.addAction("Rescan devices", lambda: self.refresh_devices())
+        tb.addSeparator()
+        self.autostart_action = QAction("Start at login", self, checkable=True,
+                                        checked=autostart.is_enabled())
+        self.autostart_action.setToolTip("Start SteelPanel in the system tray when you log in, "
+                                         "so remapping, angle snapping and the keyboard screen "
+                                         "work without opening it")
+        self.autostart_action.toggled.connect(self.set_autostart)
+        tb.addAction(self.autostart_action)
 
         # Body: device list | settings.
         splitter = QSplitter()
@@ -228,6 +236,19 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "Save failed", str(exc))
 
+    def set_autostart(self, enabled: bool) -> None:
+        try:
+            autostart.set_enabled(enabled)
+        except OSError as exc:
+            QMessageBox.warning(self, "Start at login", f"Could not change the autostart entry: {exc}")
+            self.autostart_action.blockSignals(True)
+            self.autostart_action.setChecked(autostart.is_enabled())
+            self.autostart_action.blockSignals(False)
+            return
+        self.statusBar().showMessage(
+            "SteelPanel will start in the tray at login" if enabled
+            else "SteelPanel won't start at login", 4000)
+
     # -- profiles ------------------------------------------------------------
     def _reload_profiles(self) -> None:
         self.profile_combo.clear()
@@ -242,6 +263,7 @@ class MainWindow(QMainWindow):
                 group.addAction(act)
                 menu.addAction(act)
             menu.addSeparator()
+            menu.addAction(self.autostart_action)
             menu.addAction("Show SteelPanel", self.show_and_raise)
             menu.addAction("Quit", self._quit)
             self.tray.setContextMenu(menu)

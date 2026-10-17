@@ -42,7 +42,8 @@ the mouse, then pick what it should send (any key or mouse button; type to
 search). Mappings are saved in your profile.
 
 - It works while SteelPanel runs (closing the window keeps it in the tray;
-  use the autostart entry below to start it at login). Quit SteelPanel and
+  tick **Start at login** in the toolbar to have it running after every
+  login). Quit SteelPanel and
   the mouse is back to normal.
 - It works below the desktop, so on Wayland and X11 alike. Remapped buttons
   come from a virtual device named "SteelPanel virtual …".
@@ -170,12 +171,12 @@ steelpanel --watch-buttons  # print what each mouse button sends
   profile (`~/.config/steelpanel/profiles.json`).
 - **New…** creates a profile as a copy of the current one. Switch profiles
   from the toolbar or the tray icon's menu.
-- Most mice forget their settings when unplugged. Either click **Save to
-  device memory**, or let SteelPanel re-apply the active profile at login:
-
-  ```bash
-  cp packaging/steelpanel-autostart.desktop ~/.config/autostart/
-  ```
+- **Start at login** (toolbar, or the tray icon's menu) starts SteelPanel in
+  the tray when you log in and applies the active profile. Remapping, angle
+  snapping and the keyboard screen need it running, and most mice forget
+  their settings when unplugged (unless you click **Save to device
+  memory**). It adds an entry to `~/.config/autostart`, which also appears
+  in System Settings → Autostart; unticking removes it.
 
 ## Development
 
@@ -209,6 +210,7 @@ steelpanel/
   backends/rival.py   mice via rivalcfg
   backends/openrgb.py keyboards via OpenRGB SDK
   backends/screen.py  keyboard OLED screens
+  autostart.py        Start at login (XDG autostart entry)
   oled.py             screen protocol, rendering and refresh loop
   gui/                PySide6 window, per-setting editor widgets
   __main__.py         CLI entry point
