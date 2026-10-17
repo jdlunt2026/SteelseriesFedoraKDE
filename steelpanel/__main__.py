@@ -3,7 +3,9 @@
     steelpanel                      open the GUI
     steelpanel --list               list detected devices and their settings
     steelpanel --apply [PROFILE]    apply a profile headlessly (e.g. at login)
-    sudo steelpanel --install-udev  allow non-root access to SteelSeries mice
+    steelpanel --oled-test          draw a test pattern on an Apex keyboard's screen
+    sudo steelpanel --install-udev  allow non-root access to SteelSeries mice and
+                                    keyboard screens
 """
 
 from __future__ import annotations
@@ -59,8 +61,12 @@ def _cmd_apply(name: str | None) -> int:
     for problem in found.problems:
         print(f"! {problem}", file=sys.stderr)
     errors = apply_profile(store, name, found.devices)
-    if any(v.get("software_buttons") or v.get("angle_snapping") for v in store.get(name).values()):
+    values = store.get(name).values()
+    if any(v.get("software_buttons") or v.get("angle_snapping") for v in values):
         print("Note: button remapping and angle snapping are only active while the SteelPanel app runs.")
+    if any(v.get("mode", "Keyboard default") != "Keyboard default"
+           for dev_id, v in store.get(name).items() if dev_id.startswith("screen:")):
+        print("Note: the keyboard screen only shows SteelPanel content while the app runs.")
     for e in errors:
         print(f"! {e}", file=sys.stderr)
     print(f"Applied '{name}' to {len(found.devices)} device(s).")
@@ -81,8 +87,41 @@ def _cmd_install_udev() -> int:
         print("Permission denied: run this command with sudo.", file=sys.stderr)
         return 1
     print(f"Wrote {udev.RULES_FILE_PATH} and {steelpanel_udev.RULES_PATH}.")
-    print("Unplug and replug your mouse (or its dongle).")
+    print("Unplug and replug your mouse (or its dongle) and keyboard.")
     return 0
+
+
+def _cmd_oled_test(seconds: float = 10.0) -> int:
+    import time
+
+    from PySide6.QtGui import QGuiApplication
+
+    from . import oled
+
+    app = QGuiApplication.instance() or QGuiApplication(["steelpanel"])  # fonts  # noqa: F841
+    screens = oled.find_screens()
+    if not screens:
+        print("No Apex keyboard with a screen found.", file=sys.stderr)
+        return 1
+    status = 0
+    for product_id, path in screens:
+        screen = oled.HidScreen(product_id, path)
+        label = f"{screen.model.name} ({oled.VENDOR:04x}:{product_id:04x})"
+        try:
+            screen.show(oled.render_test_pattern())
+        except OSError as exc:
+            print(f"{label}: can't write to the screen: {exc}\n"
+                  "Run 'sudo steelpanel --install-udev', then replug the keyboard.", file=sys.stderr)
+            status = 1
+            continue
+        print(f"{label}: sent a test pattern: a frame around the edge, a filled square "
+              "in the top-left corner and the text \"SteelPanel / screen test\".")
+        try:
+            time.sleep(seconds)
+            screen.show(oled.BLANK)
+        finally:
+            screen.close()
+    return status
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -93,7 +132,9 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--apply", nargs="?", const="", metavar="PROFILE",
                        help="apply a profile (default: the active one) and exit")
     group.add_argument("--install-udev", action="store_true",
-                       help="install udev rules for mice (needs sudo)")
+                       help="install udev rules for mice and keyboard screens (needs sudo)")
+    group.add_argument("--oled-test", action="store_true",
+                       help="show a test pattern on the keyboard screen for 10 seconds")
     parser.add_argument("--hidden", action="store_true", help="start the GUI minimized to tray")
     args = parser.parse_args(argv)
 
@@ -103,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_apply(args.apply or None)
     if args.install_udev:
         return _cmd_install_udev()
+    if args.oled_test:
+        return _cmd_oled_test()
 
     from .gui.app import run
     return run(start_hidden=args.hidden)

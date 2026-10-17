@@ -19,6 +19,7 @@ SteelPanel builds on two open-source projects that reverse-engineered them:
 |---|---|---|
 | Mice (Rival, Aerox, Prime, Sensei, Kana, Kinzu; ~70 models) | [rivalcfg](https://github.com/flozz/rivalcfg), direct USB HID | DPI presets, polling rate, LED colors and effects, button mapping, model-specific options, saving to onboard memory, angle snapping (software) |
 | Keyboards (Apex) and other RGB gear | [OpenRGB](https://openrgb.org) SDK server | Lighting effect, color, per-zone color, brightness, effect speed |
+| Apex keyboard OLED screens | direct USB HID (protocol from [apex-tux](https://github.com/not-jan/apex-tux)) | Clock, text, image or system monitor on the screen |
 
 The GUI is generated from each device's capability description, so any mouse
 that rivalcfg supports gets the right controls automatically.
@@ -73,10 +74,38 @@ offered for every supported mouse and saved in your profile.
   rules from `sudo steelpanel --install-udev` (run it again if you
   installed them before this feature; the rules now cover every mouse).
 
-**Apex Pro Gen 3:** lighting only, through OpenRGB, which recognises this
+**Apex Pro Gen 3:** lighting through OpenRGB, which recognises this
 keyboard from **version 1.0** (September 2026). Older OpenRGB versions won't
-list it. Check with `openrgb --version`. Actuation points, rapid trigger and
-the OLED screen are only configurable in SteelSeries GG.
+list it. Check with `openrgb --version`. The OLED screen is driven by
+SteelPanel itself (below). Actuation points and rapid trigger are only
+configurable in SteelSeries GG.
+
+### Keyboard screen (OLED)
+
+The screen shows up as its own device, "SteelSeries Apex Pro Gen 3 /
+Keyboard screen", with a **Screen** tab. **Show** picks what's on it:
+
+| Show | |
+|---|---|
+| Keyboard default | SteelPanel leaves the screen alone |
+| Clock | 24-hour (optionally with seconds) or 12-hour, with or without the date |
+| Text | your text, in the largest size that fits |
+| Image | any image file, scaled to 128×40 and dithered to black and white |
+| System monitor | CPU and memory use |
+
+- Like button remapping, it's shown while SteelPanel runs (it can sit in the
+  tray). Quitting SteelPanel, or switching back to Keyboard default, blanks
+  the screen.
+- It needs the udev rules from `sudo steelpanel --install-udev` (run it again
+  if you installed them before this feature), then replug the keyboard.
+- `steelpanel --oled-test` draws a test pattern for 10 seconds: a frame
+  around the edge, a filled square in the top-left corner and "SteelPanel /
+  screen test". If that looks wrong or nothing appears, please open an issue
+  with what you saw.
+- The report formats come from [apex-tux](https://github.com/not-jan/apex-tux),
+  which also covers the older Apex Pro, Apex 7, Apex 5 and the Apex Pro TKL
+  Wireless Gen 3, so SteelPanel tries those too; they're marked
+  "experimental" until someone confirms them.
 
 ## Install
 
@@ -123,6 +152,7 @@ steelpanel                  # open the GUI
 steelpanel --list           # print detected devices and their settings
 steelpanel --apply Gaming   # apply a profile and exit (scriptable)
 steelpanel --hidden         # start in the tray
+steelpanel --oled-test      # test pattern on the keyboard screen
 ```
 
 - Changes apply to the hardware immediately and are saved to the active
@@ -167,6 +197,8 @@ steelpanel/
   udev.py             udev rules for remapping
   backends/rival.py   mice via rivalcfg
   backends/openrgb.py keyboards via OpenRGB SDK
+  backends/screen.py  keyboard OLED screens
+  oled.py             screen protocol, rendering and refresh loop
   gui/                PySide6 window, per-setting editor widgets
   __main__.py         CLI entry point
 tests/                pytest suite (no hardware needed)

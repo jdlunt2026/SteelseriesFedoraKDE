@@ -9,7 +9,8 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QColorDialog, QComboBox, QCompleter, QDialog,
-    QDialogButtonBox, QFormLayout, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
+    QDialogButtonBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit,
     QPushButton, QSlider, QSpinBox, QTableWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -414,6 +415,49 @@ class KeymapEditor(SettingEditor):
             self._add_row(src, dst)
 
 
+class TextEditor(SettingEditor):
+    def __init__(self, spec, parent=None):
+        super().__init__(spec, parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.edit = QLineEdit()
+        self._timer = self._debounced()
+        self.edit.textEdited.connect(lambda _: self._timer.start())
+        lay.addWidget(self.edit)
+
+    def value(self):
+        return self.edit.text()
+
+    def _set(self, value):
+        self.edit.setText(value or "")
+
+
+class FileEditor(SettingEditor):
+    FILTER = "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.svg)"
+
+    def __init__(self, spec, parent=None):
+        super().__init__(spec, parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.edit = QLineEdit(readOnly=True, placeholderText="No file chosen")
+        browse = QPushButton("Choose…")
+        browse.clicked.connect(self._browse)
+        lay.addWidget(self.edit, 1)
+        lay.addWidget(browse)
+
+    def _browse(self):
+        path, _ = QFileDialog.getOpenFileName(self, self.spec.label, self.edit.text(), self.FILTER)
+        if path:
+            self.edit.setText(path)
+            self._emit()
+
+    def value(self):
+        return self.edit.text()
+
+    def _set(self, value):
+        self.edit.setText(value or "")
+
+
 class ActionEditor(SettingEditor):
     def __init__(self, spec, parent=None):
         super().__init__(spec, parent)
@@ -438,6 +482,8 @@ EDITORS = {
     model.DPI: DpiEditor,
     model.BUTTONS: ButtonsEditor,
     model.ACTION: ActionEditor,
+    model.TEXT: TextEditor,
+    model.FILE: FileEditor,
 }
 
 

@@ -17,7 +17,8 @@ from ..model import Backend, Device
 from ..profiles import ProfileStore, apply_profile
 from .widgets import SettingEditor, make_editor
 
-GROUP_ORDER = [model.PERFORMANCE, model.LIGHTING, model.MAPPING, model.POWER, model.GENERAL]
+GROUP_ORDER = [model.PERFORMANCE, model.LIGHTING, model.SCREEN, model.MAPPING, model.POWER,
+               model.GENERAL]
 INFO_REFRESH_MS = 60_000  # battery level of wireless devices
 ACCENT = "#ff5200"
 

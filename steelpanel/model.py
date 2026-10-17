@@ -18,6 +18,8 @@ COLOR = "color"      # "#rrggbb" (or None when `allow_off`)
 DPI = "dpi"          # list of 1..max_presets ints in [minimum, maximum]
 BUTTONS = "buttons"  # dict of button name -> action string
 KEYMAP = "keymap"    # dict of evdev code name -> evdev code name (software remap)
+TEXT = "text"        # free text
+FILE = "file"        # path of a file (images)
 ACTION = "action"    # no value, just triggers a command
 
 # Groups (one tab each in the GUI).
@@ -25,6 +27,7 @@ PERFORMANCE = "Performance"
 LIGHTING = "Lighting"
 MAPPING = "Buttons"
 POWER = "Power"
+SCREEN = "Screen"
 GENERAL = "General"
 
 

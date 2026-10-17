@@ -3,10 +3,11 @@ from __future__ import annotations
 from ..model import Backend, DiscoveryResult
 from .openrgb import OpenRGBBackend
 from .rival import RivalBackend
+from .screen import ScreenBackend
 
 
 def default_backends() -> list[Backend]:
-    return [RivalBackend(), OpenRGBBackend()]
+    return [RivalBackend(), OpenRGBBackend(), ScreenBackend()]
 
 
 def discover_all(backends: list[Backend]) -> DiscoveryResult:
