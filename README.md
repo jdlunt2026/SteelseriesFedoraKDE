@@ -104,8 +104,10 @@ Keyboard screen", with a **Screen** tab. **Show** picks what's on it:
   the screen.
 - It needs the udev rules from `sudo steelpanel --install-udev` (run it again
   if you installed them before this feature), then replug the keyboard.
-- Confirmed on an Apex Pro Gen 3: updates show up immediately, and the
-  keyboard's own screen menu still works on top of SteelPanel's content.
+- Confirmed on an Apex Pro Gen 3: every mode works and updates show up
+  immediately, the keyboard's own screen menu still works on top of
+  SteelPanel's content, OpenRGB lighting keeps working alongside it, and the
+  screen goes blank when SteelPanel quits.
 - `steelpanel --oled-test` draws a test pattern for 10 seconds: a frame
   around the edge, a filled square in the top-left corner and "SteelPanel /
   screen test". If that looks wrong or nothing appears, please open an issue
