@@ -195,3 +195,35 @@ def test_switching_to_keyboard_default_clears_screen():
     r.configure(mode="Keyboard default")
     r._thread.join(timeout=2)
     assert screen.frames[-1] == oled.BLANK and not screen.closed
+
+
+def test_text_limit_and_image_clear_in_gui():
+    from steelpanel.gui.widgets import make_editor
+
+    specs = {s.key: s for s in KeyboardScreen(FakeScreen()).settings()}
+    assert specs["text"].max_length == oled.MAX_TEXT == 28
+    text = make_editor(specs["text"], "x" * 40)
+    assert text.value() == "x" * 28 and text.count.text() == "28/28"
+
+    image = make_editor(specs["image"], "/tmp/pic.png")
+    got = []
+    image.changed.connect(got.append)
+    assert image.clear.isEnabled()
+    image.clear.click()
+    assert got == [""] and image.value() == "" and not image.clear.isEnabled()
+
+
+def test_device_truncates_long_saved_text():
+    dev = KeyboardScreen(FakeScreen())
+    calls = []
+    dev._runner.configure = lambda **kw: calls.append(kw)
+    dev.apply("text", "y" * 40)
+    assert calls == [{"text": "y" * 28}]
+
+
+def test_max_length_text_is_not_clipped():
+    for text in ("Limit Break ready! Go go go!", "W" * oled.MAX_TEXT):
+        f = oled.render_text(text)
+        assert lit(f) > 100
+        edges = [f[y * W] or f[y * W + W - 1] for y in range(H)] + [f[x] or f[(H - 1) * W + x] for x in range(W)]
+        assert not any(edges), text

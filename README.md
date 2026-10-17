@@ -95,8 +95,8 @@ Keyboard screen", with a **Screen** tab. **Show** picks what's on it:
 |---|---|
 | Keyboard default | SteelPanel leaves the screen alone |
 | Clock | 24-hour (optionally with seconds) or 12-hour, with or without the date |
-| Text | your text, in the largest size that fits |
-| Image | any image file, scaled to 128×40 and dithered to black and white |
+| Text | up to 28 characters, in the largest size that fits |
+| Image | any image file, scaled to 128×40 and dithered to black and white (**Clear** removes it) |
 | System monitor | CPU and memory use |
 
 - Like button remapping, it's shown while SteelPanel runs (it can sit in the

@@ -67,6 +67,9 @@ MODELS: dict[int, ScreenModel] = {
 }
 
 BLANK = bytes(WIDTH * HEIGHT)
+#: Longest text that still fits the screen legibly (two lines at the
+#: smallest font size).
+MAX_TEXT = 28
 
 
 # --------------------------------------------------------------------------
@@ -219,12 +222,17 @@ def _to_frame(img, dither: bool = False) -> bytes:
 def _fit_text(painter, text: str, rect, max_px: int, bold: bool = False, wrap: bool = True):
     """Draw `text` in the largest font size that fits `rect`."""
     QtCore, QtGui = _qt()
-    flags = QtCore.Qt.AlignCenter | (QtCore.Qt.TextWordWrap if wrap else 0)
-    for px in range(max_px, 7, -1):
-        font = _font(px, bold)
-        bounds = QtGui.QFontMetrics(font).boundingRect(rect, flags, text)
-        if bounds.width() <= rect.width() and bounds.height() <= rect.height():
-            break
+    # Prefer breaking between words; break inside words only if nothing fits.
+    wraps = [QtCore.Qt.TextWordWrap, QtCore.Qt.TextWrapAnywhere] if wrap else [0]
+    for wrap_flag in wraps:
+        flags = QtCore.Qt.AlignCenter | wrap_flag
+        for px in range(max_px, 7, -1):
+            font = _font(px, bold)
+            bounds = QtGui.QFontMetrics(font).boundingRect(rect, flags, text)
+            if bounds.width() <= rect.width() and bounds.height() <= rect.height():
+                painter.setFont(font)
+                painter.drawText(rect, flags, text)
+                return
     painter.setFont(font)
     painter.drawText(rect, flags, text)
 

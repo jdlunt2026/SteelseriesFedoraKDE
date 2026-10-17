@@ -50,6 +50,8 @@ class Setting:
     unit: str = ""
     #: Text shown instead of the minimum value, e.g. "Never" for a 0 timer.
     minimum_label: str = ""
+    #: Longest allowed TEXT value (0 = no limit).
+    max_length: int = 0
 
 
 class Device(ABC):

@@ -424,6 +424,17 @@ class TextEditor(SettingEditor):
         self._timer = self._debounced()
         self.edit.textEdited.connect(lambda _: self._timer.start())
         lay.addWidget(self.edit)
+        self.count = None
+        if spec.max_length:
+            self.edit.setMaxLength(spec.max_length)
+            self.count = QLabel()
+            self.count.setStyleSheet("color: palette(placeholder-text);")
+            self.edit.textChanged.connect(self._update_count)
+            lay.addWidget(self.count)
+            self._update_count()
+
+    def _update_count(self, *_):
+        self.count.setText(f"{len(self.edit.text())}/{self.spec.max_length}")
 
     def value(self):
         return self.edit.text()
@@ -442,8 +453,17 @@ class FileEditor(SettingEditor):
         self.edit = QLineEdit(readOnly=True, placeholderText="No file chosen")
         browse = QPushButton("Choose…")
         browse.clicked.connect(self._browse)
+        self.clear = QPushButton("Clear")
+        self.clear.clicked.connect(self._clear)
+        self.edit.textChanged.connect(lambda text: self.clear.setEnabled(bool(text)))
+        self.clear.setEnabled(False)
         lay.addWidget(self.edit, 1)
         lay.addWidget(browse)
+        lay.addWidget(self.clear)
+
+    def _clear(self):
+        self.edit.clear()
+        self._emit()
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(self, self.spec.label, self.edit.text(), self.FILTER)

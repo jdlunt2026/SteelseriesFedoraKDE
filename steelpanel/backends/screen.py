@@ -29,7 +29,9 @@ class KeyboardScreen(Device):
             Setting(key="show_date", label="Show date under the clock", kind=model.CHOICE,
                     group=model.SCREEN, default="Yes", choices=["Yes", "No"]),
             Setting(key="text", label="Text", kind=model.TEXT, group=model.SCREEN, default="",
-                    description="Shown in the largest size that fits; long text wraps"),
+                    max_length=oled.MAX_TEXT,
+                    description=f"Up to {oled.MAX_TEXT} characters, shown in the largest "
+                                "size that fits; long text wraps"),
             Setting(key="image", label="Image", kind=model.FILE, group=model.SCREEN, default="",
                     description="Scaled to 128x40 and converted to black and white"),
         ]
@@ -42,6 +44,8 @@ class KeyboardScreen(Device):
         spec = self._by_key[key]
         if spec.kind == model.CHOICE and value not in spec.choices:
             raise ValueError(f"unknown choice {value!r}")
+        if spec.kind == model.TEXT and spec.max_length and value:
+            value = value[:spec.max_length]  # e.g. longer text saved by an older version
         self._runner.configure(**{key: value if value is not None else spec.default})
 
     def info(self) -> dict[str, str]:
