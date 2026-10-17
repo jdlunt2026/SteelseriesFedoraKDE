@@ -50,6 +50,12 @@ search). Mappings are saved in your profile.
   The side buttons are on their own interface, so remapping them doesn't
   route pointer movement through SteelPanel. Remapping back/forward or
   middle click does.
+- Besides keys and mouse buttons, a button can send a **double or triple
+  left click** (pick "Double left click" / "Triple left click").
+- Some buttons (usually the DPI button) are handled inside the mouse and
+  never reach Linux, so they can't be remapped here. `steelpanel
+  --watch-buttons` prints what each button sends; buttons that print nothing
+  are of that kind.
 - The left button can't be remapped.
 - It needs `sudo dnf install python3-evdev` and the udev rules from
   `sudo steelpanel --install-udev` (run it again if you installed them
@@ -155,6 +161,7 @@ steelpanel --list           # print detected devices and their settings
 steelpanel --apply Gaming   # apply a profile and exit (scriptable)
 steelpanel --hidden         # start in the tray
 steelpanel --oled-test      # test pattern on the keyboard screen
+steelpanel --watch-buttons  # print what each mouse button sends
 ```
 
 - Changes apply to the hardware immediately and are saved to the active

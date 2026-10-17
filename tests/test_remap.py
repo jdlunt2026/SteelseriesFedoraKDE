@@ -287,3 +287,38 @@ def test_snapper_stays_snapped_through_a_small_wobble():
     # A real turn (45 degrees) is let through.
     turn = [s.filter(2, 2, 0.08 + i * 0.001) for i in range(40)]
     assert turn[-1] == (2, 2)
+
+
+# -- click macros ------------------------------------------------------------
+
+
+def test_triple_click_macro(aerox, monkeypatch):
+    monkeypatch.setattr(remap, "CLICK_HOLD", 0)
+    monkeypatch.setattr(remap, "CLICK_GAP", 0)
+    r, b = aerox
+    r.start = lambda: None
+    r.set_mapping({"KEY_1": "MACRO_TRIPLE_CLICK"})
+    assert r._mapping == {e.KEY_1: (e.BTN_LEFT, 3)}
+    r.reconcile()
+    ui = b.uinputs[-1]
+    assert e.BTN_LEFT in ui.caps[e.EV_KEY] and e.REL_X in ui.caps[e.EV_REL]
+    kb = src(r, "/dev/input/event6")
+    kb.queue = [ev(e.EV_KEY, e.KEY_1, 1), ev(e.EV_SYN, 0, 0),
+                ev(e.EV_KEY, e.KEY_1, 2), ev(e.EV_KEY, e.KEY_1, 0), ev(e.EV_SYN, 0, 0)]
+    r.process(kb)
+    import time
+    for _ in range(200):
+        clicks = [w for w in ui.written if w[0] == e.EV_KEY]
+        if len(clicks) == 6:
+            break
+        time.sleep(0.005)
+    # press/release three times; the source key itself (press, repeat,
+    # release) is never forwarded
+    assert clicks == [(e.EV_KEY, e.BTN_LEFT, v) for v in (1, 0) * 3]
+    assert all(w[1] != e.KEY_1 for w in ui.written)
+
+
+def test_macro_names():
+    names = remap.all_key_names()
+    assert names.index("MACRO_TRIPLE_CLICK") < names.index("KEY_F13")
+    assert remap.pretty("MACRO_TRIPLE_CLICK") == "Triple left click"

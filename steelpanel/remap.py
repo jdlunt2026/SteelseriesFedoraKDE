@@ -17,6 +17,8 @@ Aerox 9 Wireless). How it works:
   the mouse behaves normally again.
 
 Mappings are stored by evdev code names, e.g. ``{"KEY_1": "KEY_F13"}``.
+A target can also be a click macro from :data:`MACROS`, e.g.
+``{"KEY_1": "MACRO_TRIPLE_CLICK"}``.
 """
 
 from __future__ import annotations
@@ -59,9 +61,22 @@ FRIENDLY = {
     "KEY_COPY": "Copy", "KEY_PASTE": "Paste", "KEY_CUT": "Cut", "KEY_UNDO": "Undo",
 }
 
+#: Targets that send several clicks: name -> (button, clicks). The clicks
+#: are sent when the source button is pressed; its release does nothing.
+MACROS = {
+    "MACRO_DOUBLE_CLICK": ("BTN_LEFT", 2),
+    "MACRO_TRIPLE_CLICK": ("BTN_LEFT", 3),
+}
+FRIENDLY["MACRO_DOUBLE_CLICK"] = "Double left click"
+FRIENDLY["MACRO_TRIPLE_CLICK"] = "Triple left click"
+#: Seconds a macro click is held down, and between clicks. Well inside any
+#: double-click interval, slow enough for apps (and games) to count each one.
+CLICK_HOLD = 0.015
+CLICK_GAP = 0.025
+
 #: Shown first in the target picker.
 COMMON_TARGETS = [
-    "BTN_MIDDLE", "BTN_RIGHT", "BTN_SIDE", "BTN_EXTRA",
+    "BTN_MIDDLE", "BTN_RIGHT", "BTN_SIDE", "BTN_EXTRA", *MACROS,
     *[f"KEY_F{i}" for i in range(13, 25)],
     "KEY_LEFTCTRL", "KEY_LEFTSHIFT", "KEY_LEFTALT", "KEY_LEFTMETA",
     "KEY_PLAYPAUSE", "KEY_NEXTSONG", "KEY_PREVIOUSSONG",
@@ -94,12 +109,22 @@ def all_key_names() -> list[str]:
         return list(COMMON_TARGETS)
     names = {_first_name(n) for n in ecodes.KEY.values()} | {_first_name(n) for n in ecodes.BTN.values()}
     names = {n for n in names if n.startswith(("KEY_", "BTN_")) and n != "KEY_RESERVED"}
+    names |= set(MACROS)
     rest = sorted(names - set(COMMON_TARGETS))
     return [n for n in COMMON_TARGETS if n in names] + rest
 
 
 def code_of(name: str) -> int:
     return ecodes.ecodes[name]
+
+
+def target_of(name: str):
+    """Internal form of a mapping target: an evdev code, or for a macro
+    (button code, clicks)."""
+    if name in MACROS:
+        button, clicks = MACROS[name]
+        return code_of(button), clicks
+    return code_of(name)
 
 
 def name_of(code: int) -> str:
@@ -233,7 +258,9 @@ class Remapper:
             "Button remapping needs python-evdev: sudo dnf install python3-evdev, "
             "then re-run ./install.sh")
         self._lock = threading.Lock()
-        self._mapping: dict[int, int] = {}
+        #: source code -> target code, or (button code, clicks) for macros
+        self._mapping: dict[int, int | tuple[int, int]] = {}
+        self._write_lock = threading.Lock()  # macros write from their own thread
         self._snap_degrees = 0.0
         self._capture: Callable[[str], None] | None = None
         self._dirty = True
@@ -251,7 +278,7 @@ class Remapper:
         for src, dst in (mapping or {}).items():
             if src in PROTECTED or not dst or src == dst:
                 continue
-            codes[code_of(src)] = code_of(dst)  # KeyError on unknown names
+            codes[code_of(src)] = target_of(dst)  # KeyError on unknown names
         with self._lock:
             self._mapping = codes
             self._dirty = True
@@ -399,7 +426,7 @@ class Remapper:
             for etype, codes in src.dev.capabilities().items():
                 if etype in caps:
                     caps[etype].update(c for c in codes if isinstance(c, int))
-        caps[ecodes.EV_KEY].update(mapping.values())
+        caps[ecodes.EV_KEY].update(t if isinstance(t, int) else t[0] for t in mapping.values())
         if any(code >= ecodes.BTN_MISC and code < ecodes.KEY_OK for code in caps[ecodes.EV_KEY]):
             # Mouse buttons on a device without axes are ignored by libinput.
             caps[ecodes.EV_REL].update({ecodes.REL_X, ecodes.REL_Y, ecodes.REL_WHEEL})
@@ -445,11 +472,36 @@ class Remapper:
                 dx, dy = src.snapper.filter(src.dx, src.dy, time.monotonic())
                 src.dx = src.dy = 0
                 if dx:
-                    self._uinput.write(ecodes.EV_REL, ecodes.REL_X, dx)
+                    self._write(ecodes.EV_REL, ecodes.REL_X, dx)
                 if dy:
-                    self._uinput.write(ecodes.EV_REL, ecodes.REL_Y, dy)
+                    self._write(ecodes.EV_REL, ecodes.REL_Y, dy)
             code = mapping.get(ev.code, ev.code) if ev.type == ecodes.EV_KEY else ev.code
-            self._uinput.write(ev.type, code, ev.value)
+            if isinstance(code, tuple):  # click macro
+                if ev.value == 1:
+                    self._start_macro(*code)
+                continue
+            self._write(ev.type, code, ev.value)
+
+    def _write(self, etype: int, code: int, value: int) -> None:
+        with self._write_lock:
+            if self._uinput is not None:
+                self._uinput.write(etype, code, value)
+
+    def _start_macro(self, button: int, clicks: int) -> None:
+        """Click `button` `clicks` times without holding up other input."""
+        def run():
+            try:
+                for i in range(clicks):
+                    if i:
+                        time.sleep(CLICK_GAP)
+                    for value in (1, 0):
+                        self._write(ecodes.EV_KEY, button, value)
+                        self._write(ecodes.EV_SYN, ecodes.SYN_REPORT, 0)
+                        if value:
+                            time.sleep(CLICK_HOLD)
+            except OSError:  # virtual device closed (unplugged / stopped)
+                pass
+        threading.Thread(target=run, name="click macro", daemon=True).start()
 
     def _close_all(self) -> None:
         for src in self._sources.values():
@@ -463,9 +515,10 @@ class Remapper:
             except OSError:
                 pass
         self._sources.clear()
-        if self._uinput is not None:
-            try:
-                self._uinput.close()
-            except OSError:
-                pass
-            self._uinput = None
+        with self._write_lock:
+            if self._uinput is not None:
+                try:
+                    self._uinput.close()
+                except OSError:
+                    pass
+                self._uinput = None

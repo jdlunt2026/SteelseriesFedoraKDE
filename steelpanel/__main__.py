@@ -4,6 +4,7 @@
     steelpanel --list               list detected devices and their settings
     steelpanel --apply [PROFILE]    apply a profile headlessly (e.g. at login)
     steelpanel --oled-test          draw a test pattern on an Apex keyboard's screen
+    steelpanel --watch-buttons      print what each mouse button sends (Ctrl+C stops)
     sudo steelpanel --install-udev  allow non-root access to SteelSeries mice and
                                     keyboard screens
 """
@@ -124,6 +125,52 @@ def _cmd_oled_test(seconds: float = 10.0) -> int:
     return status
 
 
+def _cmd_watch_buttons() -> int:
+    """Print every button/key event of the plugged SteelSeries mice."""
+    import select
+
+    from . import remap
+
+    if not remap.available():
+        print("Needs python-evdev: sudo dnf install python3-evdev", file=sys.stderr)
+        return 1
+    from rivalcfg import devices
+
+    from .backends.rival import family_product_ids, split_connection
+
+    ids = set()
+    for dev in devices.list_plugged_devices():
+        name, _ = split_connection(dev["name"])
+        ids.update(family_product_ids(dev["vendor_id"], name))
+    try:
+        found = remap.EvdevBackend().list_devices(0x1038, ids)
+    except PermissionError:
+        print("No permission for the mouse's input devices. Run "
+              "'sudo steelpanel --install-udev', then replug the mouse.", file=sys.stderr)
+        return 1
+    if not found:
+        print("No SteelSeries mouse input device found.", file=sys.stderr)
+        return 1
+    for d in found:
+        print(f"listening: {d.path}  {d.name}  ({d.info.vendor:04x}:{d.info.product:04x})")
+    print("Press buttons on the mouse (Ctrl+C to stop). Buttons that print nothing "
+          "are handled inside the mouse and can't be remapped by SteelPanel.")
+    ecodes = remap.ecodes
+    try:
+        while True:
+            for d in select.select(found, [], [])[0]:
+                for ev in d.read():
+                    if ev.type == ecodes.EV_KEY and ev.value in (0, 1):
+                        state = "pressed" if ev.value else "released"
+                        print(f"{remap.name_of(ev.code):<14} {state:<8} from {d.name}")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for d in found:
+            d.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="steelpanel", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -135,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
                        help="install udev rules for mice and keyboard screens (needs sudo)")
     group.add_argument("--oled-test", action="store_true",
                        help="show a test pattern on the keyboard screen for 10 seconds")
+    group.add_argument("--watch-buttons", action="store_true",
+                       help="print what each mouse button sends")
     parser.add_argument("--hidden", action="store_true", help="start the GUI minimized to tray")
     args = parser.parse_args(argv)
 
@@ -146,6 +195,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_install_udev()
     if args.oled_test:
         return _cmd_oled_test()
+    if args.watch_buttons:
+        return _cmd_watch_buttons()
 
     from .gui.app import run
     return run(start_hidden=args.hidden)
